@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>爬虫資料-{{get.t}}</title>
+    <meta charset="UTF-8">
+    <script type="text/javascript">
+        var timer1 = null; 
+        var sessionHandle = (event, e) => {
+          console.log('reset')
+          reset();
+        };
+        var cutData = () => {
+          while (document.getElementById('data').children.length>1000) {
+            document.getElementById('data').removeChild(document.getElementById('data').lastChild);
+          }
+          return false;
+        };
+
+        setInterval(() => { // 定时清理
+          cutData();
+        }, 5*60*1000);
+
+        var errorHandle = (event, e) => {
+          document.getElementById('errorMsg').innerHTML += `<hr><div>No${event.counter}.${JSON.stringify(e.data)}</div>`;
+        };
+        var custEvents = [
+          {name: 'countFinish', domId: 'countFinish', isCounter: false, prefix: '', cb: null, counter: 0, noReset: true},  // session
+          {name: 'countDoing', domId: 'countDoing', isCounter: false, prefix: '', cb: null, counter: 0, noReset: true}, // error
+          {name: 'countWaiting', domId: 'countWaiting', isCounter: false, prefix: '', cb: null, counter: 0}, // add
+        ];
+        var ini = (ce) =>  {
+          var d = document.getElementById(ce.domId);
+          if (ce.isCounter) d.innerHTML = `${ce.prefix}${ce.counter}`;
+          else d.innerHTML = `${ce.prefix}${ce.ini || ''}`;
+        }
+        var reset = () => {
+          console.log('doing reset ...')
+          custEvents.filter(ce=>!ce.noReset).forEach(ce => {
+            ce.counter = 0;
+            ini(ce)
+          })
+        };
+        var addEvent = (es, event) => {
+          ini(event) // 初始化
+          console.log('add event:', event.name)
+          es.addEventListener(
+            event.name, 
+            e => {
+              if (event.name === 'session')  console.log(' event e:', e)
+              var d = document.getElementById(event.domId);
+              if (event.isCounter) d.innerHTML = event.prefix + (++event.counter);
+              else d.innerHTML = event.prefix + e.data;
+              if (typeof event.cb === 'function') event.cb(event, e);
+            } 
+          );
+        }
+        window.addEventListener("load", () => {
+            var es = new EventSource("status?t={{get.t}}&a={{get.a}}");
+            es.onerror = () => {
+              console.log("EventSource failed.");
+              document.getElementById('error').innerHTML='<b>【 LOAD ERROR 】 </b>';
+            };
+
+            custEvents.forEach(ce => {
+              addEvent(es, ce);
+            })
+
+            es.addEventListener(
+                "message", 
+                e => {
+                  //clearTimeout(timer1);
+                  // document.getElementById('error').innerHTML='';
+
+                  // console.log(e);
+                  var d = document.getElementById('d' + e.lastEventId) 
+                  if (d) {
+                    d.innerHTML = d.innerHTML + e.data;
+                  } else {
+                    d = document.createElement("div");
+                    d.id = 'd' + e.lastEventId;
+                    d.innerHTML = e.data;
+                    document.getElementById('data').prepend(d);
+                  }
+
+                  /*
+                  timer1 = setTimeout(() => {
+                    fetch('infoOfCompany1Iniskip?id='+e.lastEventId)
+                      .then((response) => {
+                        console(response.json());
+                        window.location.reload(true);
+                      })
+                      .then((myJson) => {
+                        console.log(myJson);
+                      });
+                    }, 5 * 60 * 1000); */
+                  } 
+                );
+        });
+        var toggleError = () => {
+          console.log('toggleError errorMsg');
+          if (document.getElementById('errorMsg').style.display.toLowerCase() !== "block") {
+            document.getElementById('errorMsg').style.display = "block"; 
+          } else {
+            document.getElementById('errorMsg').style.display = "none" ; 
+          }
+          return 0;
+        }
+    </script>
+  </head>
+  <body style="font-size:12px;">
+    <div id="" style="background-color:rgb(185, 240, 113);padding:10px 0;"> 
+      <div id="session" style="color:grey"></div>
+        <div>
+          已完成：<span style="color:red" id="countFinish"></span>&nbsp;
+          进行中：<span style="color:green" id="countDoing"></span>&nbsp;
+          待运行：<span style="color:grey" id="countWaiting"></span>&nbsp;
+          <a href="javascript:cccounter=0;eeexist=0;document.getElementById('data').innerHTML='';void(0);">C</a>&nbsp;
+          <!-- <a href="javascript:cutData();">cut</a>&nbsp;
+          
+          <a href="javascript:toggleError()">error:<span style="color:red" id="errorCount" >0</span></a>&nbsp;
+          <div style="color:red;display:none;" id="errorMsg">错误信息:</div> -->
+        </div>
+        
+       
+      </div>
+    <div id="data"></div>
+  </body>
+</html>

@@ -1,0 +1,219 @@
+
+const puppeteer = require('puppeteer');
+const util = require('util');
+
+var think = {};
+think.isEmpty = o => {
+  return o === undefined || o === '' || o === null;
+};
+
+var Pupp = class {
+  esmessage(res, type, id, msg) {
+    res.write(`event:${type}\n`);
+    res.write(`id: ${id}\n`);
+    res.write(`data:${msg}\n\n`);
+  }
+
+  async doPupp(config, res) {
+    const hostname = config.hostname;
+    const hosturl = config.url;
+
+    // console.info(`+++++++++++++++++++++insertZfcg0Action called `, think.datetime(new Date()));
+
+    // if (think.env === 'development' && this.isCli) {
+    //   console.info('+++++++++++++++开发环境 不执行crontab insertZfcg0Action++++++++++++++++');
+    //   return;
+    // }
+
+    const model = this.model('scrapu_task');
+
+    if (res) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        // 'Content-Type': 'text/plain',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache'
+        // 'Content-Length': 100
+      });
+    }
+
+    // 获取任务
+    let task = await model.where(`(hostname='${hostname}' or isnull(hostname)) and is_publish=1 and is_delete=0`).order('id desc').find();
+    if (think.isEmpty(task)) {
+      if (res) {
+        this.esmessage(res, 'message', hostname, '没有sss任务');
+        res.end();
+      }
+      return;
+    }
+
+    if (task.hostname === null) { // 抢任务
+      console.log('抢任务');
+      if (res) this.esmessage(res, 'message', hostname, `抢占${task.title}..`);
+      await model.where({id: task.id, hostname: null, is_publish: 1, is_delete: 0}).update({hostname});
+
+      task = await model.where({hostname, is_publish: 1, is_delete: 0}).find(); // 判断是否抢成功
+      if (task.hostname === null) { // 抢任务失败
+        console.log('任务抢失败');
+        if (res) {
+          this.esmessage(res, 'message', hostname, '任务抢失败');
+          this.ctx.res.end();
+        }
+        return;
+      } else {
+        console.log('任务抢成功');
+        if (res) this.esmessage(res, 'message', hostname, '任务抢成功');
+      }
+    } else {
+      if (res) this.esmessage(res, 'message', hostname, `继续任务：${task.title}..`);
+    }
+
+    if (res) this.esmessage(res, 'message', hostname, `初始化 puppeteer..`);
+    const browser = await puppeteer.launch({
+      'headless': !config.not_headless,
+      // # 'devtools': true
+      // # 'executablePath': '/Users/changjiang/apps/Chromium.app/Contents/MacOS/Chromium',
+      'args': [
+        '--disable-extensions',
+        '--hide-scrollbars',
+        '--disable-bundled-ppapi-flash',
+        '--mute-audio',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu'
+      ],
+      'dumpio': true
+    });
+
+    const page = await browser.newPage();
+
+    // # await page.setRequestInterception(True)
+    // # page.on('request',  intercept_request)
+    // # page.on('response',  intercept_response)
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36 Edge/16.16299');
+    await page.setViewport({'width': 1080, 'height': 960});
+    await page.evaluate(`
+        () =>{
+                Object.defineProperties(navigator,{
+                  webdriver:{
+                    get: () => false
+                  }
+                })
+  
+                delete navigator.__proto__.webdriver
+  
+                console.log('delete navigator.__proto__.webdriver finish.')
+        }
+    `);
+    if (res) this.esmessage(res, 'message', hostname, `开始打开首页: ${task.url}..`);
+    await page.goto(task.url);
+    // #  // 等待"后端开发"这部分内容呈现
+    // # await page.waitForSelector('#pos-backend')
+    await this.sleep(2);
+
+    if (res) this.esmessage(res, 'message', hostname, `开始执行前序动作: ..`);
+    const preTasks = task.pre_action.split('\n').filter(a => !think.isEmpty(a));
+    for (var i = 0; i < preTasks.length; i++) {
+      if (res) this.esmessage(res, 'message', hostname, `前序动作: ${i + 1}/${preTasks.length} :${preTasks[i]}..`);
+      const thisTask = JSON.parse(preTasks[i]);
+      // ['click','//td[@class="zs1" and text()=“医疗器械”]']
+      // ['sleep',1]
+
+      // ['click','//td[@onclick="javascript:sform(2,10,this,\'132\')"]']
+      // ['sleep',1]
+      switch (thisTask[0]) {
+        case 'sleep':
+          await this.sleep(thisTask[1]);
+          break;
+        case 'click':
+          // # 点点击 医疗器械
+          // x_Path = `//td[@class="zs1" and text()='医疗器械']`;
+          // # YLQX_PATH =  """//td[@class="zs1" and text()='广　　告']"""
+          const el = await page.$x(thisTask[1]);
+          // console.log('YLQX: ', YLQX.length);
+          const box = await el[thisTask[2] || 0].boundingBox();
+          await page.mouse.click(box.x + 3, box.y + 3);
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (res) this.esmessage(res, 'message', hostname, `开始进入分页: ..`);
+    await page.evaluate(util.format(task.pager_js, task.first_page));
+    this.sleep(2);
+
+    // #获取列表
+    let pageNoCurrent = task.first_page;
+
+    let ItemList = await page.$x(task.list_path);
+    while (ItemList.length > 0 && pageNoCurrent < 3) {
+      for (var j = 0; j < ItemList.length; j++) { // 详细条目,处理
+        const item = ItemList[j];
+        const a = await item.$x(task.item_path);
+        const box = await a[0].boundingBox();
+        await page.mouse.click(box.x + 3, box.y + 3);
+        this.sleep(1);
+
+        // ['许可证编号', 'xkzbh', '//td[text()="许可证编号"]/following-sibling::td']
+        // ['企业名称', 'company', '//td[text()="企业名称"]/following-sibling::td']
+        // ['法定代表人','fr', '//td[text()="法定代表人"]/following-sibling::td']
+        // ['企业负责人','qyfzr', '//td[text()="企业负责人"]/following-sibling::td']
+        // ['住所', 'zs', '//td[text()="住所"]/following-sibling::td']
+        // ['生产地址', 'scdz', '//td[text()="生产地址"]/following-sibling::td']
+        // ['生产范围(2002分类)', 'fw_2002', '//td[text()="生产范围(2002分类)"]/following-sibling::td']
+        // ['生产范围(2017分类)','fw_2017', '//td[text()="生产范围(2017分类)"]/following-sibling::td']
+        // ['发证部门','fzbm', '//td[text()="发证部门"]/following-sibling::td']
+        // ['发证日期','fzrq', '//td[text()="发证日期"]/following-sibling::td']
+        // ['有效期限','yxrq', '//td[text()="有效期限"]/following-sibling::td']
+        // ['生产产品登记表','cpdjb', '//td[text()="生产产品登记表"]/following-sibling::td']
+        // ['注','sda_notes','//td[text()="注"]/following-sibling::td']
+
+        const detail = await page.$x(task.detail_path);
+        const valuesUniq = {};
+        const uniq_key_fields = task.uniq_key_fields.split('\n');
+        for (var k = 0; k < uniq_key_fields.length; k++) {
+          const field = uniq_key_fields[k];
+          const f = JSON.parse(field);
+          const fv = await detail.$x(f[2]);
+          valuesUniq[f[1]] = await this.page.evaluate(el => el.innerText, fv[0]);
+        };
+
+        const values = {};
+        const item_fields = task.item_fields.split('\n');
+        for (var k = 0; k < uniq_key_fields.length; k++) {
+          const field = uniq_key_fields[k];
+          const f = JSON.parse(field);
+          const fv = await detail.$x(f[2]);
+          values[f[1]] = await this.page.evaluate(el => el.innerText, fv[0]);
+        };
+
+        if (res) this.esmessage(res, 'message', hostname, `获得数据: ..${JSON.stringify(values)}`);
+
+        // this.model(task.table_name).thenAdd(values, valuesUniq);
+        // //img[@onclick="javascript:viewList()"] // 返回
+        const el = await page.$x(task.detail_back_path);
+        // console.log('YLQX: ', YLQX.length);
+        const box2 = await el[0].boundingBox();
+        await page.mouse.click(box2.x + 3, box2.y + 3);
+        this.sleep(2);
+      }
+
+      // # NEXT PAGE
+      pageNoCurrent++;
+      await page.evaluate(util.format(task.pager_js, pageNoCurrent));
+      this.sleep(2);
+
+      // #重新获取列表
+      ItemList = await page.$x(task.list_path);
+    }
+
+    await browser.close();
+  }
+};
+
+module.exports = Pupp;
+
+var p = new Pupp();
+p.doPupp({hostname: 'local', url: '', not_headless: true}, null);
