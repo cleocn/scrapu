@@ -420,6 +420,8 @@ module.exports = class extends Base {
             if (!detail) {
               this.esmessage('message', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${task.pager}</b>`);
               this.esmessage('errorCount', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${task.pager}</b>`);
+              await page.waitFor(5000); // 等待5秒，
+              await page2.close();
               continue; // 有部分在列表中，但是已经删除的 //https://www.11467.com/guangzhou/search/371-15.htm 第一条 https://www.11467.com/guangzhou/co/434047.htm
             }
 
@@ -484,6 +486,7 @@ module.exports = class extends Base {
               await page.waitFor(Math.random() * 3 * 1000);
             } else {
               page2.close();
+              await page.waitFor(2000);
             }
 
             // 检查session
