@@ -5,13 +5,13 @@
   "author": "cleo",
   "scripts": {
     "dev": "node development.js",
-    "start": "node production.js",
     "test": "THINK_UNIT_TEST=1 nyc ava test/ && nyc report --reporter=html",
     "compile": "babel --no-babelrc src/ --presets think-node --out-dir app/",
     "lint": "eslint src/",
     "lint-fix": "eslint --fix src/"
   },
   "dependencies": {
+    "html-to-text": "^5.1.1",
     "puppeteer": "^2.1.1",
     "think-cache": "^1.0.0",
     "think-cache-file": "^1.0.8",
@@ -39,7 +39,7 @@
   "repository": "",
   "license": "MIT",
   "engines": {
-    "node": ">=12.0.0"
+    "node": "12.16.1"
   },
   "readmeFilename": "README.md",
   "thinkjs": {
