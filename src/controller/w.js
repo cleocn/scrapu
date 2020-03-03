@@ -417,6 +417,11 @@ module.exports = class extends Base {
             });
 
             const detail = (await page2.$x(task.detail_path))[0];
+            if (!detail) {
+              this.esmessage('message', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${task.pager}</b>`);
+              this.esmessage('errorCount', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${task.pager}</b>`);
+              continue; // 有部分在列表中，但是已经删除的 //https://www.11467.com/guangzhou/search/371-15.htm 第一条 https://www.11467.com/guangzhou/co/434047.htm
+            }
 
             const item_fields = task.item_fields.split('\n').filter(a => !think.isEmpty(a));
             for (var k = 0; k < item_fields.length; k++) {
