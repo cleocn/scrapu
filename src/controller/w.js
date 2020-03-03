@@ -216,16 +216,17 @@ module.exports = class extends Base {
     task.url = task.task_url || task.url;
 
     this.esmessage('message', hostname, `任务信息：${JSON.stringify(task)}`);
-    this.esmessage('session', hostname, `[${task.id}#${task.title}@${session}@${hostname}] @${think.datetime((new Date()), 'DD日HH:mm:ss')}`, true);
+    this.esmessage('session', hostname, `[${task.id}#${task.title}@${hostname}] @${think.datetime((new Date()), 'DD日HH:mm:ss')}`, true);
 
     this.esmessage('message', hostname, `初始化 puppeteer..`);
     const browser = await puppeteer.launch({
       // 'product': 'firefox',
       'headless': think.config('scrapu').headless,
+      // 'headless': false,
       // 'devtools': true,
       // # 'executablePath': '/Users/changjiang/apps/Chromium.app/Contents/MacOS/Chromium',
       'args': [
-        '--proxy-server=http://127.0.0.1:8080',
+        // '--proxy-server=http://127.0.0.1:8080',
         '--disable-extensions',
         '--hide-scrollbars',
         '--disable-bundled-ppapi-flash',
@@ -283,73 +284,55 @@ module.exports = class extends Base {
         }
     `);
     this.esmessage('message', hostname, `开始打开首页: ${task.url}..`);
-    // const url = `http://www.nmpa.gov.cn/WS04/CL2042/`;
-    // // const url = `http://baidu.com`;
-    // // await page.goto(task.url);
-    // await page.goto(url);
-    // await page.waitFor(200);
-
-    await page.goto(task.url);
-
-    // 保持浏览器打开，直到显式终止进程
-    // await browser.waitForTarget(() => false);
-
-    // const cookies = `JSESSIONID=1CE2AABABA05B7AB6B32170DE6D0EF9A.7; FSSBBIl1UgzbN7N82S=dK78jXIuxJvwp_gqgbEk7kGWB5BeLJeN8y_pkNfFCRVUWjLZGpyKqNKLLBK97BUN; FSSBBIl1UgzbN7N82T=2mgPrWsosWYwSJjQMIFoNR5yWnb15mcvNJ4SdTm3TSNAt2NEE7xbIY.xoAtbs9Y90G93WTKCh2Ne1jr6Kp2zhAfsupQdcvIbyS4DGcDAg.BdI4AbC_LVBMWoOPLn.UVlTz1EqfLB.4VvSAfN7sw_z3O98jM_GSwElPlTqqu3Nrx4SDARpSiHZ6PP2K_s2auaxPEfYvA1umnX3..JWskXZHdDpiFkN3HK5a2ebIm34rc_ehNG9iohSfyCFt8w7ZSA2ws5V.kion0wBj8pDRmn6reTA5gE8GR33vp46M9bgEMbOdgjTRtJv9WFBmDz8QKsm3bCo6JpqD_QNosi0wrM0mG9by4b5h0oA9PW.5DxI8GVoDq; FSSBBIl1UgzbN7N80S=iea5eQLtDeqG_dNzU3FOtHn6300WHmtPOYS9SFcO0Sc_x5jK6l1RBlCtQsDJXT4Z; FSSBBIl1UgzbN7N80T=3yAW.rrZS26j.tyxfgbeVQFNWhTORHbQC9z4Nw4ZuM9wtKIVV_qMj0gGb.h8ZNGUgrlu0MiOVKtho7SYna5zHCl3Mn8fOCInP6h83MtTRfPSTS8TTRBoiBh66y6l7w6JkJC4kN_C9xgNdtVa9oSZmlQaScdV7cpNw05In6vh.wTbKEmz0dK2AHkJuip0H7tTMiXvutlME7Xe.IGCNw076zGWUre6wlXBxXTWGoDYQCWaojNIkAN2UlxLWOwAdSiaRyYwQ45y40ROlVopDbjUOmKaZ57H1kCPXKoGUraVrHGSiaeakyQ3kZdxKZG.JzG145DLU5C0jtDwiinNyzVjJm_i2nbJDB0TFA4vn9BN.V1XOsA;`;
-    // const ck = cookies.split(';').filter(c => c).map(c => {
-    //   return {name: c.split('=')[0].trim(), value: c.split('=')[1].trim()};
-    // });
-
-    // console.log(JSON.stringify(ck));
-
-    // await page.setCookie(...ck);
-
-    // #  // 等待"后端开发"这部分内容呈现
-    // # await page.waitForSelector('#pos-backend')
-    await this.sleep(2);
-    await page.waitFor(Math.random() * 3 * 1000); // 随机停留
-
-    this.esmessage('message', hostname, `开始执行前序动作: ..`);
-    const preTasks = task.pre_action.split('\n').filter(a => !think.isEmpty(a));
-    for (var i = 0; i < preTasks.length; i++) {
-      this.esmessage('message', hostname, `前序动作: ${i + 1}/${preTasks.length} :${preTasks[i]}..`);
-      const thisTask = JSON.parse(preTasks[i]);
-      // ["click","//td[@class='zs1' and text()='医疗器械']"]
-      // ["sleep",1]
-
-      // ["click", "//td[@onclick=\\"javascript:sform(2,10,this,'132')\\"]"]
-      // ["sleep",1]
-      switch (thisTask[0]) {
-        case 'sleep':
-          await this.sleep(thisTask[1]);
-          await page.waitFor(Math.random() * 3 * 1000); // 随机停留
-          break;
-        case 'click':
-          // # 点点击 医疗器械
-          // x_Path = `//td[@class="zs1" and text()='医疗器械']`;
-          // # YLQX_PATH =  """//td[@class="zs1" and text()='广　　告']"""
-          // await page.waitForNavigation();
-          await page.waitForXPath(thisTask[1]);
-          const el = await page.$x(thisTask[1]);
-          // console.log('YLQX: ', YLQX.length);
-          const box = await el[thisTask[2] || 0].boundingBox();
-          await page.mouse.click(box.x + 3, box.y + 3);
-          break;
-        default:
-          break;
-      }
-    }
 
     let pageNoCurrent = task.first_page;
     let idx = 0;
-    await this.gotoPage(page, pageNoCurrent, task, hostname);
-
-    // #获取列表
-    let ItemList = await page.$x(task.list_path);
-    this.esmessage('message', hostname, `获得列表: ${ItemList.length}项 .`);
-    // while (ItemList.length > 0 && pageNoCurrent < 3) {
-    let lastPageItems = 'lastPageItems';
-    let currentPageItems = 'currentPageItems';
     try {
+      await page.goto(task.url);
+
+      await this.sleep(2);
+      await page.waitFor(Math.random() * 3 * 1000); // 随机停留
+
+      this.esmessage('message', hostname, `开始执行前序动作: ..`);
+      const preTasks = task.pre_action.split('\n').filter(a => !think.isEmpty(a));
+      for (var i = 0; i < preTasks.length; i++) {
+        this.esmessage('message', hostname, `前序动作: ${i + 1}/${preTasks.length} :${preTasks[i]}..`);
+        const thisTask = JSON.parse(preTasks[i]);
+        // ["click","//td[@class='zs1' and text()='医疗器械']"]
+        // ["sleep",1]
+
+        // ["click", "//td[@onclick=\\"javascript:sform(2,10,this,'132')\\"]"]
+        // ["sleep",1]
+        switch (thisTask[0]) {
+          case 'sleep':
+            await this.sleep(thisTask[1]);
+            await page.waitFor(Math.random() * 3 * 1000); // 随机停留
+            break;
+          case 'click':
+            // # 点点击 医疗器械
+            // x_Path = `//td[@class="zs1" and text()='医疗器械']`;
+            // # YLQX_PATH =  """//td[@class="zs1" and text()='广　　告']"""
+            // await page.waitForNavigation();
+            await page.waitForXPath(thisTask[1]);
+            const el = await page.$x(thisTask[1]);
+            // console.log('YLQX: ', YLQX.length);
+            const box = await el[thisTask[2] || 0].boundingBox();
+            await page.mouse.click(box.x + 3, box.y + 3);
+            break;
+          default:
+            break;
+        }
+      }
+
+      await this.gotoPage(page, pageNoCurrent, task, hostname);
+
+      // #获取列表
+      let ItemList = await page.$x(task.list_path);
+      this.esmessage('message', hostname, `获得列表: ${ItemList.length}项 .`);
+      // while (ItemList.length > 0 && pageNoCurrent < 3) {
+      let lastPageItems = 'lastPageItems';
+      let currentPageItems = 'currentPageItems';
+
       while (ItemList.length > 0 && lastPageItems !== currentPageItems) {
         const items_now = await this.model(task.table_name).where(task.items_now_sql || {task_id: task.id}).count();
         this.esmessage('page', hostname, `[(<b style="color:blue">${(items_now * 100 / task.total_items).toFixed(1)}%</b>)<b style="color:green">${items_now}</b>/${task.total_items}] P:[${task.first_page}-><b style="color:green">${pageNoCurrent}</b>->${task.to_page}]/${task.total_page}`, true);
@@ -467,8 +450,10 @@ module.exports = class extends Base {
               this.esmessage('message', hostname, `$2.主表不存在`);
               let r = {};
               if (think.isEmpty(valuesUniq)) {
+                this.esmessage('message', hostname, `$2.1 唯一键为空`);
                 r = await this.model(task.table_name).thenAdd(values, {from_source_link});
               } else {
+                this.esmessage('message', hostname, `$2.2 唯一键不为空`);
                 r = await this.model(task.table_name).thenAdd(values, valuesUniq);
               }
 
