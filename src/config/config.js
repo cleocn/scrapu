@@ -1,6 +1,6 @@
 // default config
 module.exports = {
-  port: process.env.PORT || 6463, // server port
+  port: process.env.PORT || 6464, // server port
   workers: 1,
   scrapu: {
     hostname: process.env.scrapu_hostname || null,
