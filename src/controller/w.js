@@ -521,6 +521,8 @@ module.exports = class extends Base {
     if (task.pager) {
       this.esmessage('message', hostname, `goto  ${vsprintf(task.pager, [pageNoCurrent])} 。`);
       await page.goto(vsprintf(task.pager, [pageNoCurrent]));
+      await page.waitFor(3 * 1000); // 停留3s
+      await page.waitFor(task.list_path); // 随机停留
     } else {
       await page.$eval('#goInt', input => { input.value = '' }); // 清除原有内容
       const goInts = await page.$x('//input[@id="goInt"]');
