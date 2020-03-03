@@ -14,6 +14,7 @@
   "dependencies": {
     "html-to-text": "^5.1.1",
     "puppeteer": "^2.1.1",
+    "sprintf-js": "^1.1.2",
     "think-cache": "^1.0.0",
     "think-cache-file": "^1.0.8",
     "think-logger3": "^1.0.0",
