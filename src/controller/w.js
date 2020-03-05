@@ -12,7 +12,7 @@ module.exports = class extends Base {
   esmessage(type, id, msg, no_time) {
     if (type) this.ctx.res.write(`event:${type}\n`);
     if (id) this.ctx.res.write(`id: ${id}\n`);
-    if (msg) this.ctx.res.write(`data:${(no_time ? '' : think.datetime(new Date()))} ${msg}\n\n`);
+    if (msg) this.ctx.res.write(`data:${(no_time ? '' : think.datetime((new Date()), 'HH:mm:ss'))} ${msg}\n\n`); // YYYY-MM-DD HH:ii:ss
   }
 
   async pingAction() {
@@ -340,6 +340,7 @@ module.exports = class extends Base {
         currentPageItems = 'currentPageItems';
         await model.where({id: task.id, hostname, session}).update({ping: think.datetime(new Date())});
         for (var j = 0; j < ItemList.length; j++) { // 详细条目,处理
+          this.esmessage('message', hostname, `P${pageNoCurrent}: ${j}项 .<br/><br/>`);
           idx = j;
           const item = ItemList[j];
 
@@ -415,11 +416,12 @@ module.exports = class extends Base {
                 document.getElementById('aboutuscontent').children[1].click();
               }
             });
+            await page2.waitFor(1000);
 
             const detail = (await page2.$x(task.detail_path))[0];
             if (!detail) {
-              this.esmessage('message', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${task.pager}</b>`);
-              this.esmessage('errorCount', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${task.pager}</b>`);
+              this.esmessage('message', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${vsprintf(task.pager, [pageNoCurrent])}</b>`);
+              this.esmessage('errorCount', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${vsprintf(task.pager, [pageNoCurrent])}</b>`);
               await page.waitFor(5000); // 等待5秒，
               await page2.close();
               continue; // 有部分在列表中，但是已经删除的 //https://www.11467.com/guangzhou/search/371-15.htm 第一条 https://www.11467.com/guangzhou/co/434047.htm
