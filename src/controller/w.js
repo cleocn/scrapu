@@ -416,12 +416,16 @@ module.exports = class extends Base {
                 document.getElementById('aboutuscontent').children[1].click();
               }
             });
-            await page2.waitFor(1000);
+            await page2.waitFor(3000);
+            await page2.waitForXPath('//body');
 
             const detail = (await page2.$x(task.detail_path))[0];
             if (!detail) {
               this.esmessage('message', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${vsprintf(task.pager, [pageNoCurrent])}</b>`);
               this.esmessage('errorCount', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">ERROR: 本条已经删除.${vsprintf(task.pager, [pageNoCurrent])}</b>`);
+              const body = await page2.evaluate(el => el.innerHTML, (await page2.$x('//body'))[0]);
+              this.esmessage('errorCount', hostname, `P${pageNoCurrent}.${idx}<b style="color:red;">body:${body}</b>`);
+
               await page.waitFor(5000); // 等待5秒，
               await page2.close();
               continue; // 有部分在列表中，但是已经删除的 //https://www.11467.com/guangzhou/search/371-15.htm 第一条 https://www.11467.com/guangzhou/co/434047.htm
