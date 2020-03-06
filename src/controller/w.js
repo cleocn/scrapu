@@ -234,8 +234,8 @@ module.exports = class extends Base {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-gpu'
-      ],
-      'dumpio': true
+      ]
+      // 'dumpio': true
     });
 
     const page = await browser.newPage();
@@ -512,7 +512,7 @@ module.exports = class extends Base {
         await this.gotoPage(page, pageNoCurrent, task, hostname);
 
         // #重新获取列表
-        ItemList = await page.$x(task.list_path);
+        // ItemList = await page.$x(task.list_path);
         this.esmessage('message', hostname, `重新获取列表 ItemList.length=${ItemList.length}.`);
       } // while end
 
@@ -532,7 +532,7 @@ module.exports = class extends Base {
       this.esmessage('message', hostname, `goto  ${vsprintf(task.pager, [pageNoCurrent])} 。`);
       await page.goto(vsprintf(task.pager, [pageNoCurrent]));
       await page.waitFor(3 * 1000); // 停留3s
-      await page.waitFor(task.list_path); // 随机停留
+      // await page.waitFor(task.list_path); // 随机停留
     } else {
       await page.$eval('#goInt', input => { input.value = '' }); // 清除原有内容
       const goInts = await page.$x('//input[@id="goInt"]');
@@ -542,7 +542,7 @@ module.exports = class extends Base {
       await gotoBtn[0].click();
     }
 
-    await page.waitForXPath(task.list_path);
+    // await page.waitForXPath(task.list_path);
     await page.waitFor(2000);
   }
 };
