@@ -7,6 +7,7 @@ const os = require('os');
 var sprintf = require('sprintf-js').sprintf,
   vsprintf = require('sprintf-js').vsprintf;
 const htmlToText = require('html-to-text');
+var h2p = require('html2plaintext');
 
 module.exports = class extends Base {
   esmessage(type, id, msg, no_time) {
@@ -536,7 +537,7 @@ module.exports = class extends Base {
       this.esmessage('message', hostname, `goto  ${vsprintf(task.pager, [pageNoCurrent])} 。`);
       await page.goto(vsprintf(task.pager, [pageNoCurrent]));
       await page.waitFor(3 * 1000); // 停留3s
-      // await page.waitFor(task.list_path); // 随机停留
+      await page.waitForXPath('//body'); // 随机停留
     } else {
       await page.$eval('#goInt', input => { input.value = '' }); // 清除原有内容
       const goInts = await page.$x('//input[@id="goInt"]');
@@ -548,5 +549,416 @@ module.exports = class extends Base {
 
     // await page.waitForXPath(task.list_path);
     await page.waitFor(2000);
+  }
+
+  async pAction() {
+    const values = this.get();
+    const disp = {action: values.action || 'companyInfo'};
+    delete values.action;
+
+    disp.param = Object.keys(values).map(k => `${k}=${values[k]}`).join('&');
+    this.assign('get', disp);
+    return this.display();
+  }
+
+  async companyInfoResetAction() {
+    console.info(`+++++++++++++++++++++companyInfoResetAction called `, think.datetime(new Date()));
+
+    if (think.env === 'development' && this.isCli) {
+      console.info('+++++++++++++++开发环境 不执行crontab companyInfoResetAction++++++++++++++++');
+      return;
+    }
+
+    // 0️⃣=未处理， 1=处理完成，2=处理错误，3=等待 天眼查
+    await this.model('company_hanlp').where({process_ini: ['NOTIN', [0, 1, 2, 3]]}).update({process_ini: 0});
+
+    return this.success('OK');
+  }
+
+  async companyInfoAction() {
+    console.info(`+++++++++++++++++++++companyInfoAction called `, think.datetime(new Date()));
+
+    if (think.env === 'development' && this.isCli) {
+      console.info('+++++++++++++++开发环境 不执行crontab companyInfoAction++++++++++++++++');
+      return;
+    }
+
+    this.ctx.res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      // 'Content-Type': 'text/plain',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache'
+      // 'Content-Length': 100
+    });
+
+    const session = parseInt(this.get('s') || '99');
+
+    // 新的 ++++++++++++++++++++
+    const items = await this.model('company_hanlp')
+      .where({is_delete: 0, process_ini: ['IN', [(this.get('m') === 't') ? 3 : 0, session]]}).field('*').setRelation(false)
+      .limit(50)
+      .select();
+    // 设为为处理中 。。。。  process_ini =99
+    if (!think.isEmpty(items)) {
+      await this.model('company_hanlp').where({id: ['IN', items.map(i => i.id)]}).update({process_ini: session});
+    }
+
+    const total = await this.model('company_hanlp').where({process_ini: ['NOTIN', [1, 2]]}).count();
+
+    this.ctx.res.write(`event:total\n`);
+    this.esmessage('total', 'total', `${this.colorMe(`${items.length}@${total}`, 'green')}`);
+    // console.log(`company.length=${sites.length}/${countOfCompany} \n\n`);
+
+    // const countItems = await this.model('info').where({is_delete: 0, processed: 1}).count();
+    // this.esmessage('total', 'total', `${this.colorMe(`${items.length}@${countItems}`, 'green')}`);
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      this.esmessage('message', item.id, `${i + 1}/${items.length}: [${item.id}] ${item.title},${item.power_number} ...`);
+      const begin = (new Date()).getTime();
+
+      // try {
+      // console.log('invokeService options', options);
+      const values = (this.get('m') === 't') ? (await this.GetValuesFromTianyancha(item)) : (await this.GetValuesFromXinBaidu(item));
+      if (values.error) {
+        await this.model('company_hanlp').where({id: item.id}).update({process_ini: (this.get('m') === 't') ? 2 : 3}); // 错误
+        this.esmessage('message', item.id, this.colorMe('错误：' + values.error, 'red'), true);
+        this.esmessage('showerror', item.id, `#${item.id}:${item.title}:err:` + values.error);
+        continue;
+      }
+      const r = await this.model('company').thenAdd(values, {company: values.company, from_source_link: values.from_source_link, _logic: 'OR'});
+      if (r.type === 'exist') {
+        const newvalue = JSON.parse(JSON.stringify(values));
+        delete newvalue.company;
+        delete newvalue.from_source_link;
+        await this.model('company').where({company: values.company, from_source_link: values.from_source_link, _logic: 'OR'}).update(newvalue);
+      }
+      await this.model('company_gs').thenAdd(values, {from_source_link: values.from_source_link});
+
+      await this.model('company_hanlp').where({id: item.id}).update({process_ini: 1});
+      this.esmessage('message', item.id, `---${JSON.stringify(values)} ----`, true);
+      this.esmessage('processCounter', item.id, `processCounter`);
+      this.esmessage('message', item.id, this.colorMe('done', 'green'), true);
+
+      // docs = [...new Set([docs])];
+      // } catch (error) {
+      //   this.esmessage('message', item.id, this.colorMe('error:' + JSON.stringify(error), 'red'));
+      //   await this.model('company_hanlp').where({id: item.id}).update({process_ini: error.statusCode || 2}); // 挂起，error
+
+      //   // type, id, msg, no_time
+      //   this.esmessage('showerror', (new Date()).getTime(), `#${item.id}:${item.title}[${item.link}:]:err:` + error);
+      //   console.log(`#${item.id}:${item.title}[${item.link}:]:err:`);
+      //   console.error(error);
+      // }
+    }
+
+    let n = 0; const max = 60;
+    while (n < max) {
+      await think.timeout(1 * 1000); // 等待
+      this.esmessage('message', (new Date()).getTime(), ` ${max - n}..`, true);
+      n++;
+    }
+    this.esmessage('message', (new Date()).getTime(), '100 done');
+    this.ctx.res.end();
+  }
+
+  async GetValuesFromXinBaidu(companyHanlp) {
+    const browser = await puppeteer.launch({
+      // 'product': 'firefox',
+      'headless': true, // think.config('scrapu').headless,
+      // 'devtools': true,
+      // # 'executablePath': '/Users/changjiang/apps/Chromium.app/Contents/MacOS/Chromium',
+      'args': [
+        // '--proxy-server=http://127.0.0.1:8080',
+        '--disable-extensions',
+        '--hide-scrollbars',
+        '--disable-bundled-ppapi-flash',
+        '--mute-audio',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu'
+      ]
+      // 'dumpio': true
+    });
+
+    const page = await browser.newPage();
+    const UA = [
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.116 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko',
+      'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.11 (KHTML, like Gecko) Chrome/20.0.1132.11 TaoBrowser/2.0 Safari/536.11',
+      'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; .NET4.0C; .NET4.0E; QQBrowser/7.0.3698.400)',
+      'Mozilla/5.0 (Windows NT 5.1) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.84 Safari/535.11 SE 2.X MetaSr 1.0',
+      'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/534.57.2 (KHTML, like Gecko) Version/5.1.7 Safari/534.57.2'
+    ];
+    await page.setUserAgent(UA[Math.floor((Math.random() * UA.length))]);
+    await page.setViewport({'width': 1280, 'height': 900});
+    await page.evaluate(`
+        () =>{
+                Object.defineProperties(navigator,{
+                  webdriver:{
+                    get: () => false
+                  }
+                })
+  
+                delete navigator.__proto__.webdriver
+  
+                console.log('delete navigator.__proto__.webdriver finish.')
+        }
+    `);
+    const gotourl = `https://xin.baidu.com/s?q=${companyHanlp.title}&t=1`;
+    this.esmessage('message', companyHanlp.id, ` Goto : ${gotourl}`, true);
+    await page.goto(gotourl);
+    const pathList = `//div[@class="zx-list-item"]`;
+    await page.waitForXPath('//body');
+    await page.waitFor(3000);
+    await page.waitFor(Math.random() * 5 * 1000); // 随机停留
+    const companyList = await page.$x(pathList);
+
+    this.esmessage('message', companyHanlp.id, ` Got companyList : ${companyList.length}`, true);
+
+    if (companyList.length > 0) {
+      const elCompany = await companyList[0].$x('.//h3[@class="zx-ent-title"]/a');
+      const title = (await page.evaluate(el => el.title, elCompany[0])).trim();
+      const from_source_link = (await page.evaluate(el => el.href, elCompany[0])).trim();
+
+      if (title.toLowerCase().replace('（', '(').replace('）', ')').trim() !== companyHanlp.title.toLowerCase().replace('（', '(').replace('）', ')').trim()) {
+        browser.close();
+        return {error: `没有找到完全匹配的公司，只找到：${title}`};
+      }
+
+      // await elCompany[0].click();
+      await page.goto(from_source_link);
+      await page.waitFor(2000); // 等待2秒，等待新窗口打开
+
+      // const newWindowTarget = await browser.waitForTarget(target => target.url() === from_source_link);
+      // const newWindowTarget = await browser.target();
+
+      // console.log(newWindowTarget);
+      const page2 = page; // await newWindowTarget.page();
+
+      // let loop = 0;
+      // while ((await browser.pages()).length < 3 && loop < 3) {
+      //   await page.waitFor(3000); // 等待3秒，等待新窗口打开
+      //   loop += 1;
+      // }
+
+      // const pages = (await browser.pages()).length;
+      // if (pages < 3) {
+      //   browser.close();
+      //   return {error: `pages=${pages},打开链接失败：${title} , ${JSON.stringify((await browser.pages()))}`};
+      // }
+
+      // const page2 = (await browser.pages())[2]; // 得到所有窗口使用列表索引得到新的窗口
+
+      // await page2.setViewport({width: 1280, height: 800});
+      // run js
+      await page2.evaluate(() => {
+        if (document.getElementsByClassName('info-expand-btn') && document.getElementsByClassName('info-expand-btn').length > 1) {
+          document.getElementsByClassName('info-expand-btn')[0].click();
+          document.getElementsByClassName('info-expand-btn')[1].click();
+        }
+      });
+      await page2.waitFor(3000);
+      await page2.waitForXPath('//body');
+
+      /**
+       *
+          ["主要经营产品", "主要经营产品", "//td[translate(normalize-space(text()), ' ', '')='主要经营产品：']/following-sibling::td"]
+          ["经营范围","经营范围", "//td[text()='经营范围：']/following-sibling::td"]
+          ["营业执照号码","营业执照号码", "//td[text()='营业执照号码：']/following-sibling::td"]
+          ["发证机关", "发证机关", "//td[text()='发证机关：']/following-sibling::td"]
+          ["经营状态", "经营状态", "//td[text()='经营状态：']/following-sibling::td"]
+          ["成立时间", "成立时间", "//td[text()='成立时间：']/following-sibling::td"]
+          ["职员人数","职员人数", "//td[text()='职员人数：']/following-sibling::td"]
+          ["注册资本","注册资本", "//td[text()='注册资本：']/following-sibling::td"]
+          ["所属分类","所属分类", "//td[text()='所属分类：']/following-sibling::td"]
+          ["所属城市","所属城市", "//td[text()='所属城市：']/following-sibling::td"]
+          ["类型","类型", "//td[text()='类型：']/following-sibling::td"]
+       */
+
+      const item_fields = [
+        {name: '电话', key: 'tel', path: `//em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='电话：']/following-sibling::text()`},
+        {name: '邮箱', key: 'mail', path: `//em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='邮箱：']/following-sibling::span/text()`},
+        {name: '官网', key: 'www', path: `//em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='官网：']/following-sibling::text()`},
+        {name: '地址', key: 'companyaddress', path: `//em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='地址：']/following-sibling::text()`},
+        {name: '简介', key: 'aboutuscontent', path: `//em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='简介：']/following-sibling::p/span[1]/text()`},
+        // em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='官网：']/following-sibling::text()
+
+        // {name: '主要经营产品', key: '主要经营产品', path: ``},
+        {name: '经营范围', key: '经营范围', path: `//td[translate(normalize-space(text()), ' ', '')='经营范围']/following-sibling::td/p/span`},
+        {name: '营业执照号码', key: '营业执照号码', path: `//td[translate(normalize-space(text()), ' ', '')='统一社会信用代码']/following-sibling::td`},
+        {name: '发证机关', key: '发证机关', path: `//td[translate(normalize-space(text()), ' ', '')='登记机关']/following-sibling::td`},
+        {name: '经营状态', key: '经营状态', path: `//td[translate(normalize-space(text()), ' ', '')='经营状态']/following-sibling::td`},
+        {name: '成立时间', key: '成立时间', path: `//td[translate(normalize-space(text()), ' ', '')='成立日期']/following-sibling::td`},
+        // {name: '职员人数', key: '职员人数', path: `//td[translate(normalize-space(text()), ' ', '')='职员人数']/following-sibling::td`},
+        {name: '注册资本', key: '注册资本', path: `//td[translate(normalize-space(text()), ' ', '')='注册资本']/following-sibling::td`},
+        {name: '所属分类', key: '所属分类', path: `//td[translate(normalize-space(text()), ' ', '')='所属行业']/following-sibling::td`},
+        {name: '所属城市', key: '所属城市', path: `//td[translate(normalize-space(text()), ' ', '')='行政区划']/following-sibling::td`},
+        {name: '类型', key: '类型', path: `//td[translate(normalize-space(text()), ' ', '')='类型']/following-sibling::td`},
+        {name: '经营状态', key: '经营状态', path: `//td[translate(normalize-space(text()), ' ', '')='经营状态']/following-sibling::td`}
+      ];
+      const values = {company: title, from_source_link, verify: 1, process_ini: 0};
+      for (var k = 0; k < item_fields.length; k++) {
+        const field = item_fields[k];
+        const fv = await page2.$x(field.path);
+        if (fv.length > 0) { // 有个别网页 不完整的情况，跳过吧，没办法。
+          values[field.key] = await page2.evaluate(el => el.innerText, fv[0]); // 如果是唯一键成员
+        }
+      }
+
+      browser.close();
+      return values;
+      // await think.model('site').where({id: siteId}).update(values);
+    } else { // 没有找到
+      browser.close();
+      return {error: '没有找到匹配的公司'};
+    }
+  }
+
+  async GetValuesFromTianyancha(companyHanlp) {
+    const browser = await puppeteer.launch({
+      // 'product': 'firefox',
+      'headless': true, // think.config('scrapu').headless,
+      // 'devtools': true,
+      // # 'executablePath': '/Users/changjiang/apps/Chromium.app/Contents/MacOS/Chromium',
+      'args': [
+        // '--proxy-server=http://127.0.0.1:8080',
+        '--disable-extensions',
+        '--hide-scrollbars',
+        '--disable-bundled-ppapi-flash',
+        '--mute-audio',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu'
+      ],
+      'dumpio': true
+    });
+
+    const page = await browser.newPage();
+    const UA = [
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.116 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko',
+      'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.11 (KHTML, like Gecko) Chrome/20.0.1132.11 TaoBrowser/2.0 Safari/536.11',
+      'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; .NET4.0C; .NET4.0E; QQBrowser/7.0.3698.400)',
+      'Mozilla/5.0 (Windows NT 5.1) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.84 Safari/535.11 SE 2.X MetaSr 1.0',
+      'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/534.57.2 (KHTML, like Gecko) Version/5.1.7 Safari/534.57.2'
+    ];
+    await page.setUserAgent(UA[Math.floor((Math.random() * UA.length))]);
+    await page.setViewport({'width': 1280, 'height': 900});
+    await page.evaluate(`
+        () =>{
+                Object.defineProperties(navigator,{
+                  webdriver:{
+                    get: () => false
+                  }
+                })
+  
+                delete navigator.__proto__.webdriver
+  
+                console.log('delete navigator.__proto__.webdriver finish.')
+        }
+    `);
+    const gotourl = `https://www.tianyancha.com/search?key=${companyHanlp.title}`;
+    this.esmessage('message', companyHanlp.id, ` Goto : ${gotourl}`, true);
+    await page.goto(gotourl);
+    const pathList = `//div[@class="search-item sv-search-company"]`;
+    await page.waitForXPath('//body');
+    await page.waitFor(3000);
+    await page.waitFor(Math.random() * 5 * 1000); // 随机停留
+    const companyList = await page.$x(pathList);
+
+    this.esmessage('message', companyHanlp.id, ` Got companyList : ${companyList.length}`, true);
+
+    if (companyList.length > 0) {
+      const elCompany = await companyList[0].$x('.//div[@class="header"]/a');
+      const title = h2p((await page.evaluate(el => el.innerHTML, elCompany[0]))).trim();
+      const elhisroy = await companyList[0].$x(`.//span[text()='历史名称：']/following-sibling::span`);
+      const titleHistory = elhisroy.length > 0 ? h2p((await page.evaluate(el => el.innerHTML, elhisroy[0]))).trim() : '';
+      const from_source_link = (await page.evaluate(el => el.href, elCompany[0])).trim();
+
+      if (title.toLowerCase().replace('（', '(').replace('）', ')').trim() !==
+        companyHanlp.title.toLowerCase().replace('（', '(').replace('）', ')').trim() &&
+        titleHistory.toLowerCase().replace('（', '(').replace('）', ')').trim() !==
+        companyHanlp.title.toLowerCase().replace('（', '(').replace('）', ')').trim()) {
+        browser.close();
+        return {error: `没有找到完全匹配的公司，只找到：${title}, 历史名称: ${titleHistory}`};
+      }
+
+      // await elCompany[0].click();
+      await page.goto(from_source_link);
+      await page.waitFor(2000); // 等待2秒，等待新窗口打开
+
+      // const newWindowTarget = await browser.waitForTarget(target => target.url() === from_source_link);
+      // const newWindowTarget = await browser.target();
+
+      // console.log(newWindowTarget);
+      const page2 = page; // await newWindowTarget.page();
+
+      // run js
+      // await page2.evaluate(() => {
+      //   if (document.getElementsByClassName('info-expand-btn') && document.getElementsByClassName('info-expand-btn').length > 1) {
+      //     document.getElementsByClassName('info-expand-btn')[0].click();
+      //     document.getElementsByClassName('info-expand-btn')[1].click();
+      //   }
+      // });
+      // await page2.waitFor(3000);
+      await page2.waitForXPath('//body');
+
+      /**
+       *
+          ["主要经营产品", "主要经营产品", "//td[translate(normalize-space(text()), ' ', '')='主要经营产品：']/following-sibling::td"]
+          ["经营范围","经营范围", "//td[text()='经营范围：']/following-sibling::td"]
+          ["营业执照号码","营业执照号码", "//td[text()='营业执照号码：']/following-sibling::td"]
+          ["发证机关", "发证机关", "//td[text()='发证机关：']/following-sibling::td"]
+          ["经营状态", "经营状态", "//td[text()='经营状态：']/following-sibling::td"]
+          ["成立时间", "成立时间", "//td[text()='成立时间：']/following-sibling::td"]
+          ["职员人数","职员人数", "//td[text()='职员人数：']/following-sibling::td"]
+          ["注册资本","注册资本", "//td[text()='注册资本：']/following-sibling::td"]
+          ["所属分类","所属分类", "//td[text()='所属分类：']/following-sibling::td"]
+          ["所属城市","所属城市", "//td[text()='所属城市：']/following-sibling::td"]
+          ["类型","类型", "//td[text()='类型：']/following-sibling::td"]
+       */
+
+      const item_fields = [
+        {name: '电话', key: 'tel', path: `//div[@class='in-block sup-ie-company-header-child-1']/span[translate(normalize-space(text()), ' ', '')='电话：']/following-sibling::span/text()`},
+        {name: '邮箱', key: 'mail', path: `//div[@class='in-block sup-ie-company-header-child-2']/span[translate(normalize-space(text()), ' ', '')='邮箱：']/following-sibling::span/text()`},
+        {name: '官网', key: 'www', path: `//div[@class='in-block sup-ie-company-header-child-1']/span[translate(normalize-space(text()), ' ', '')='网址：']/following-sibling::span/text()`},
+        {name: '地址', key: 'companyaddress', path: `//div[@class='in-block sup-ie-company-header-child-2']/span[translate(normalize-space(text()), ' ', '')='地址：']/following-sibling::div/div/text()`},
+        {name: '简介', key: 'aboutuscontent', path: `//div[@class='summary']/div/div/text()`},
+        // em[@class='zx-detail-company-label' and translate(normalize-space(text()), ' ', '')='官网：']/following-sibling::text()
+
+        // {name: '主要经营产品', key: '主要经营产品', path: ``},
+
+        {name: '法定代表人', key: '法定代表人', path: `//div[@class="humancompany"]/div/a`},
+
+        {name: '经营范围', key: '经营范围', path: `//td[translate(normalize-space(text()), ' ', '')='经营范围']/following-sibling::td/span`},
+        {name: '营业执照号码', key: '营业执照号码', path: `//td[translate(normalize-space(text()), ' ', '')='统一社会信用代码']/following-sibling::td`},
+        {name: '发证机关', key: '发证机关', path: `//td[translate(normalize-space(text()), ' ', '')='登记机关']/following-sibling::td`},
+        {name: '经营状态', key: '经营状态', path: `//td[translate(normalize-space(text()), ' ', '')='经营状态']/following-sibling::td`},
+        {name: '成立时间', key: '成立时间', path: `//td[translate(normalize-space(text()), ' ', '')='成立日期']/following-sibling::td/div`},
+        {name: '职员人数', key: '职员人数', path: `//td[translate(normalize-space(text()), ' ', '')='人员规模']/following-sibling::td`},
+        {name: '注册资本', key: '注册资本', path: `//td[translate(normalize-space(text()), ' ', '')='注册资本']/following-sibling::td`},
+        {name: '所属分类', key: '所属分类', path: `//td[translate(normalize-space(text()), ' ', '')='行业']/following-sibling::td`},
+        // {name: '所属城市', key: '所属城市', path: `//td[translate(normalize-space(text()), ' ', '')='行政区划']/following-sibling::td`},
+        {name: '类型', key: '类型', path: `//td[translate(normalize-space(text()), ' ', '')='公司类型']/following-sibling::td`}
+        // {name: '经营状态', key: '经营状态', path: `//td[translate(normalize-space(text()), ' ', '')='经营状态']/following-sibling::td`}
+      ];
+      const values = {company: title, from_source_link, verify: 1};
+      for (var k = 0; k < item_fields.length; k++) {
+        const field = item_fields[k];
+        const fv = await page2.$x(field.path);
+        if (fv.length > 0) { // 有个别网页 不完整的情况，跳过吧，没办法。
+          values[field.key] = h2p((await page2.evaluate(el => el.innerHTML, fv[0])), {ignoreHref: true}); // 如果是唯一键成员
+        }
+      }
+
+      browser.close();
+      return values;
+      // await think.model('site').where({id: siteId}).update(values);
+    } else { // 没有找到
+      browser.close();
+      return {error: '没有找到匹配的公司'};
+    }
   }
 };

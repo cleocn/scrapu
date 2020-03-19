@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "html-to-text": "^5.1.1",
+    "html2plaintext": "^2.1.2",
     "puppeteer": "^2.1.1",
     "sprintf-js": "^1.1.2",
     "think-cache": "^1.0.0",
@@ -28,10 +29,10 @@
   },
   "devDependencies": {
     "babel-cli": "^6.24.1",
-    "babel-preset-think-node": "^2.0.0",
+    "babel-preset-think-node": "^1.0.0",
     "node-notifier": "^5.0.2",
     "think-inspect": "0.0.2",
-    "think-babel": "^2.0",
+    "think-babel": "^1.0.3",
     "think-watcher": "^3.0.0",
     "eslint": "^4.2.0",
     "eslint-config-think": "^1.0.0",

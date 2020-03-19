@@ -3,6 +3,10 @@ module.exports = class extends think.Controller {
 
   }
 
+  colorMe(str, color) {
+    return `<span style='color:${color || 'red'}'>${str}</span>`;
+  }
+
   async sleep(time) {
     return new Promise((resolve, reject) => {
       try {
